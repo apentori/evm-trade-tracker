@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trade-tracker"
+version = "0.1.0"
+description = "Track trades on the Optimism network"
+requires-python = ">=3.10"
+dependencies = [
+    "web3>=6.0",
+    "click>=8.0",
+    "requests>=2.28",
+    "clickhouse-driver>=0.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "ruff>=0.1",
+]
+
+[project.scripts]
+trade-tracker = "trade_tracker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]

@@ -1,7 +1,15 @@
 # Trade Tracker
 
-THis project is track trade on optimism network.
+Track trades on the Optimism network.
 
-It call the Alchemy API to get the list of blocks where the wallet did a transaction.
-Then it use web3 api to call get all transaction in the block and fetch the logs for the transaction made by the wallet.
+Uses the Alchemy API to find blocks containing wallet activity, then Web3 to
+fetch transaction details and event logs, and creates structured Trade records
+exportable to JSON or ClickHouse.
+
+## Quick Start
+
+```bash
+pip install -e .
+trade-tracker -w <WALLET> -k <API_KEY> --to-json
+```
 
