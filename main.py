@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import requests
 from web3 import Web3
-from eth_abi import decode
 import click
 import os
 import json
@@ -9,6 +8,7 @@ from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional
 import logging
+from clickhouse_driver import Client
 
 DEFAULT_URL="https://opt-mainnet.g.alchemy.com/v2"
 
@@ -73,6 +73,7 @@ def get_token_decimals(w3, token_address):
 class Trade:
     transaction_hash: str
     trade_timestamp: int
+    block_number: int
     amount_eth: float
     amount_usdc: float
     eth_sender: str
@@ -164,6 +165,7 @@ def create_trades(w3, transactions, wallet_address):
             trade = Trade(
                 transaction_hash=tx.hash,
                 trade_timestamp=tx.timestamp,
+                block_number=tx.block,
                 amount_eth=eth_amount,
                 amount_usdc=amount_usdc,
                 eth_sender=tx.from_address,
@@ -192,6 +194,43 @@ def print_json(data):
     dict_data = [asdict(obj) for obj in data]
     with open("trades.json", 'w', encoding='utf-8') as f:
         json.dump(dict_data, f, indent=4)
+
+
+def export_to_clickhouse(trades, host, port, user, password, database, table):
+    dict_data = [asdict(obj) for obj in trades]
+    if not dict_data:
+        logging.info("No trades to export")
+        return
+    client = Client(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=database,
+    )
+    create_query = f"""
+    CREATE TABLE IF NOT EXISTS {database}.{table} (
+        transaction_hash String,
+        trade_timestamp   UInt32,
+        block_number      UInt32,
+        amount_eth        Float64,
+        amount_usdc       Float64,
+        eth_sender        String,
+        eth_receiver      String,
+        token             String,
+        token_address     String,
+        token_sender      String,
+        token_receiver    String,
+        price             Float64,
+        type              String
+    ) ENGINE = ReplacingMergeTree()
+    ORDER BY (transaction_hash, trade_timestamp)
+    """
+    client.execute(create_query)
+    client.execute(f'INSERT INTO {table} VALUES', dict_data)
+    client.disconnect()
+    logging.info(f"Exported {len(dict_data)} trades to ClickHouse ({database}.{table})")
+
 
 def hex_to_int(hex_str: str, signed: bool = False) -> int:
     if not hex_str:
@@ -271,6 +310,8 @@ def extract_event_logs(trx_log, target_address):
 
 def get_block_trx(w3, block_num, target_address):
     blk_trx = []
+    if isinstance(block_num, str):
+        block_num = int(block_num, 16)
     logging.debug(f"Calling for block {block_num}")
     block = w3.eth.get_block(block_num, full_transactions=True)
     block_timestamp = block.get('timestamp', 0)
@@ -356,13 +397,37 @@ def get_block_alchemy(rpc_url, wallet_address, from_block, to_block, direction):
 @click.option('--from-block', type=int, default="0", help='From block number to scan (default: current block)')
 @click.option('-f', '--full', default=False, help='Should the ')
 @click.option('--log-level', '-l', default="INFO", help='Log Level')
-def main(url, wallet_address, api_key, to_block, from_block, full, log_level):
+@click.option('--to-json', is_flag=True, default=False, help='Export to trades.json instead of ClickHouse')
+@click.option('--ch-host', default='localhost', help='ClickHouse host (default: localhost)')
+@click.option('--ch-port', type=int, default=9000, help='ClickHouse port (default: 9000)')
+@click.option('--ch-user', default='default', help='ClickHouse user (default: default)')
+@click.option('--ch-password', default='', help='ClickHouse password')
+@click.option('--ch-database', default='default', help='ClickHouse database (default: default)')
+@click.option('--ch-table', default='trades', help='ClickHouse table name (default: trades)')
+@click.option('--follow', is_flag=True, default=False, help='Follow mode: auto-detect from-block from last stored trade (requires ClickHouse)')
+def main(url, wallet_address, api_key, to_block, from_block, full, log_level, to_json, ch_host, ch_port, ch_user, ch_password, ch_database, ch_table, follow):
     logging.basicConfig(level=log_level.upper())
     rpc_url = f"{url}/{api_key}"
     logging.info(rpc_url)
     w3 = Web3(Web3.HTTPProvider(rpc_url))
-    if to_block is None:
+    if follow:
+        if to_json:
+            raise click.ClickException("--follow requires ClickHouse mode, not --to-json")
+        client = Client(
+            host=ch_host,
+            port=ch_port,
+            user=ch_user,
+            password=ch_password,
+            database=ch_database,
+        )
+        rows = client.execute(f"SELECT MAX(block_number) FROM {ch_database}.{ch_table}")
+        last_block = rows[0][0] if rows else 0
+        client.disconnect()
+        from_block = (last_block or 0) + 1
         to_block = w3.eth.block_number
+    else:
+        if to_block is None:
+            to_block = w3.eth.block_number
     transactions = []
     logging.info(f"{hex(from_block)} - {to_block}")
     if full:
@@ -373,7 +438,10 @@ def main(url, wallet_address, api_key, to_block, from_block, full, log_level):
     logging.info(f"Found {len(transactions)} transactions:")
     trades = create_trades(w3, transactions, wallet_address)
     logging.info(f"Created {len(trades)} trades")
-    print_json(trades)
+    if to_json:
+        print_json(trades)
+    else:
+        export_to_clickhouse(trades, ch_host, ch_port, ch_user, ch_password, ch_database, ch_table)
 
 if __name__ == "__main__":
     main()
