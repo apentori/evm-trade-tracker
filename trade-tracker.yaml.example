@@ -1,0 +1,36 @@
+# Trade Tracker configuration
+# Priority: CLI flags > environment variables > YAML file > defaults
+
+alchemy:
+  url: "https://opt-mainnet.g.alchemy.com/v2"
+  api_key: ""                     # or set ALCHEMY_API_KEY env var
+
+wallet_address: ""                # or set WALLET_ADDRESS env var, or use -w flag
+
+tokens:
+  usdc: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
+  usdc_old: "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
+  weth: "0x4200000000000000000000000000000000000006"
+  weth_old: "0x4200000000000000000000000000000000000042"
+  tracked:
+    - "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
+    - "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
+    - "0x4200000000000000000000000000000000000006"
+
+events:
+  topic_types:
+    "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f": "SWAP"
+    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef": "TRANSFER"
+    "0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65": "WITHDRAWAL"
+
+null_address: "0x0000000000000000000000000000000000000000"
+
+clickhouse:
+  host: "localhost"
+  port: 9000
+  user: "default"
+  password: ""
+  database: "default"
+  table: "trades"
+
+log_level: "INFO"
