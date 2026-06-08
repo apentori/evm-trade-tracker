@@ -7,3 +7,4 @@ trades.json
 dist/
 build/
 .pytest_cache/
+.envrc
