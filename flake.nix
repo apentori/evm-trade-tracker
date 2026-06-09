@@ -65,5 +65,14 @@
           '';
         };
       }
-    );
+    ) // {
+      nixosModules.default = { pkgs, ... }: {
+        nixpkgs.overlays = [
+          (final: prev: {
+            trade-tracker = self.packages.${final.system}.default;
+          })
+        ];
+        imports = [ ./nixos-module.nix ];
+      };
+    };
 }
