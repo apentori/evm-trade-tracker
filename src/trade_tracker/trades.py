@@ -4,13 +4,7 @@ import logging
 
 from web3 import Web3
 
-from trade_tracker.cache import TokenCache
-from trade_tracker.config import (
-    TRACKED_TOKENS,
-    USDC_ADDRESS,
-    USDC_OLD_ADDRESS,
-    WETH_ADDRESS,
-)
+from trade_tracker.config import TradePair
 from trade_tracker.models import Trade, Transaction
 
 
@@ -18,14 +12,28 @@ def create_trades(
     w3: Web3,
     transactions: list[list[Transaction]],
     wallet_address: str,
-    token_cache: TokenCache | None = None,
+    pairs: list[TradePair] | None = None,
 ) -> list[Trade]:
-    if token_cache is None:
-        token_cache = TokenCache()
+    if pairs is None:
+        pairs = [
+            TradePair(
+                name="ETH/USDC",
+                base_token="0x4200000000000000000000000000000000000006",
+                quote_token="0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+                base_decimals=18,
+                quote_decimals=6,
+            ),
+        ]
 
     checksum_wallet = w3.to_checksum_address(wallet_address)
+
+    # All token addresses we care about across all pairs
+    tracked = set()
+    for p in pairs:
+        tracked.add(p.base_token.lower())
+        tracked.add(p.quote_token.lower())
+
     trades: list[Trade] = []
-    failed_hashes: list[str] = []
 
     for tx_list in transactions:
         for tx in tx_list:
@@ -33,76 +41,71 @@ def create_trades(
                 logging.warning("No events in transaction %s", tx.hash)
                 continue
 
-            filtered_logs = [log for log in tx.event_logs if log.token_address.lower() in TRACKED_TOKENS]
-            if not filtered_logs:
+            relevant = [log for log in tx.event_logs if log.token_address.lower() in tracked]
+            if not relevant:
                 continue
 
-            sent: dict[str, int] = {}
-            received: dict[str, int] = {}
-            token_sender = ""
-            token_receiver = ""
+            for pair in pairs:
+                base_addr = pair.base_token.lower()
+                quote_addr = pair.quote_token.lower()
 
-            has_withdrawal = any(event.event_type == "WITHDRAWAL" for event in filtered_logs)
-            trade_type = "BUY" if has_withdrawal else "SELL"
+                # Gross flows for this pair: how much base/quote the wallet sent/received
+                base_received = 0
+                base_sent = 0
+                quote_received = 0
+                quote_sent = 0
 
-            for log in filtered_logs:
-                token_adr = log.token_address.lower()
-                log_sender = w3.to_checksum_address(log.sender)
-                log_receiver = w3.to_checksum_address(log.receiver)
+                for log in relevant:
+                    addr = log.token_address.lower()
+                    log_sender = w3.to_checksum_address(log.sender)
+                    log_receiver = w3.to_checksum_address(log.receiver)
 
-                if log_sender == checksum_wallet:
-                    sent[token_adr] = sent.get(token_adr, 0) + log.amount
-                    token_sender = log.sender
-                if log_receiver == checksum_wallet:
-                    received[token_adr] = received.get(token_adr, 0) + log.amount
-                    token_receiver = log.receiver
+                    if addr == base_addr:
+                        if log_sender == checksum_wallet:
+                            base_sent += log.amount
+                        if log_receiver == checksum_wallet:
+                            base_received += log.amount
+                    elif addr == quote_addr:
+                        if log_sender == checksum_wallet:
+                            quote_sent += log.amount
+                        if log_receiver == checksum_wallet:
+                            quote_received += log.amount
 
-            sent_usdc = sent.get(USDC_ADDRESS, 0) or sent.get(USDC_OLD_ADDRESS, 0)
-            received_usdc = received.get(USDC_ADDRESS, 0) or received.get(USDC_OLD_ADDRESS, 0)
-            sent_weth = sent.get(WETH_ADDRESS, 0)
-            received_weth = received.get(WETH_ADDRESS, 0)
+                # BUY: wallet sends quote, receives base
+                if quote_sent > 0 and base_received > 0:
+                    amount_base = base_received
+                    amount_quote = quote_sent
+                    trade_type = "BUY"
+                # SELL: wallet sends base, receives quote
+                elif base_sent > 0 and quote_received > 0:
+                    amount_base = base_sent
+                    amount_quote = quote_received
+                    trade_type = "SELL"
+                else:
+                    continue
 
-            usdc_address = (
-                USDC_ADDRESS if (sent.get(USDC_ADDRESS, 0) or received.get(USDC_ADDRESS, 0)) else USDC_OLD_ADDRESS
-            )
-            usdc_amount_raw = sent_usdc or received_usdc
+                base_dec = pair.base_decimals
+                quote_dec = pair.quote_decimals
+                amount_base_dec = amount_base / (10**base_dec)
+                amount_quote_dec = amount_quote / (10**quote_dec)
 
-            if usdc_amount_raw == 0:
-                logging.warning("No USDC in transaction %s", tx.hash)
-                failed_hashes.append(tx.hash)
-                continue
+                if amount_base_dec == 0:
+                    continue
 
-            if received_usdc > 0:
-                eth_amount = (tx.value / 1e18) + (sent_weth / 1e18)
-            else:
-                eth_amount = received_weth / 1e18
+                trades.append(
+                    Trade(
+                        transaction_hash=tx.hash,
+                        trade_timestamp=tx.timestamp,
+                        block_number=tx.block,
+                        pair_name=pair.name,
+                        base_token=pair.base_token,
+                        quote_token=pair.quote_token,
+                        amount_base=round(amount_base_dec, 18),
+                        amount_quote=amount_quote_dec,
+                        price=amount_quote_dec / amount_base_dec,
+                        type=trade_type,
+                        sender=wallet_address,
+                    )
+                )
 
-            token_name = "USD Coin" if usdc_address == USDC_ADDRESS else token_cache.get_name(w3, usdc_address)
-            token_decimals = token_cache.get_decimals(w3, usdc_address)
-            amount_usdc = usdc_amount_raw / (10**token_decimals)
-
-            if eth_amount == 0:
-                logging.error("Error with transaction %s", tx.hash)
-                failed_hashes.append(tx.hash)
-                continue
-
-            trade = Trade(
-                transaction_hash=tx.hash,
-                trade_timestamp=tx.timestamp,
-                block_number=tx.block,
-                amount_eth=round(eth_amount, 18),
-                amount_usdc=amount_usdc,
-                eth_sender=tx.from_address,
-                eth_receiver=tx.to_address,
-                token=token_name,
-                token_address=usdc_address,
-                token_sender=token_sender,
-                token_receiver=token_receiver,
-                price=amount_usdc / eth_amount,
-                type=trade_type,
-            )
-            trades.append(trade)
-
-    if failed_hashes:
-        logging.info("Failed trades: %s", ", ".join(failed_hashes))
     return trades

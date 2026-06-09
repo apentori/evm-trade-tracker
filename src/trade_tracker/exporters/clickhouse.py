@@ -8,20 +8,18 @@ from clickhouse_driver import Client
 from trade_tracker.models import Trade
 
 CREATE_TRADES_TABLE = """
-CREATE TABLE IF NOT EXISTS {database}.{table} (
-    transaction_hash String,
+CREATE OR REPLACE TABLE {database}.{table} (
+    transaction_hash  String,
     trade_timestamp   UInt32,
     block_number      UInt32,
-    amount_eth        Float64,
-    amount_usdc       Float64,
-    eth_sender        String,
-    eth_receiver      String,
-    token             String,
-    token_address     String,
-    token_sender      String,
-    token_receiver    String,
+    pair_name         String,
+    base_token        String,
+    quote_token       String,
+    amount_base       Float64,
+    amount_quote      Float64,
     price             Float64,
-    type              String
+    type              String,
+    sender            String
 ) ENGINE = ReplacingMergeTree()
 ORDER BY (transaction_hash, trade_timestamp)
 """

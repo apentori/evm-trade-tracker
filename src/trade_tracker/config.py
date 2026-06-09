@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Maps an env var name to the Settings field it overrides.
+
+@dataclass(frozen=True)
+class TradePair:
+    name: str
+    base_token: str
+    quote_token: str
+    base_decimals: int = 18
+    quote_decimals: int = 6
+
+
 ENV_FIELD_MAP: dict[str, str] = {
     "ALCHEMY_URL": "alchemy_url",
     "ALCHEMY_API_KEY": "alchemy_api_key",
@@ -22,15 +31,10 @@ ENV_FIELD_MAP: dict[str, str] = {
     "CLICKHOUSE_PASSWORD": "clickhouse_password",
     "CLICKHOUSE_DATABASE": "clickhouse_database",
     "CLICKHOUSE_TABLE": "clickhouse_table",
-    "USDC_ADDRESS": "usdc_address",
-    "USDC_OLD_ADDRESS": "usdc_old_address",
-    "WETH_ADDRESS": "weth_address",
-    "WETH_OLD_ADDRESS": "weth_old_address",
     "NULL_ADDRESS": "null_address",
     "LOG_LEVEL": "log_level",
 }
 
-# Maps a dotted YAML path to a Settings field.
 YAML_FIELD_MAP: dict[tuple[str, ...], str] = {
     ("alchemy", "url"): "alchemy_url",
     ("alchemy", "api_key"): "alchemy_api_key",
@@ -41,20 +45,15 @@ YAML_FIELD_MAP: dict[tuple[str, ...], str] = {
     ("clickhouse", "password"): "clickhouse_password",
     ("clickhouse", "database"): "clickhouse_database",
     ("clickhouse", "table"): "clickhouse_table",
-    ("tokens", "usdc"): "usdc_address",
-    ("tokens", "usdc_old"): "usdc_old_address",
-    ("tokens", "weth"): "weth_address",
-    ("tokens", "weth_old"): "weth_old_address",
-    ("tokens", "tracked"): "tracked_tokens",
+    ("pairs",): "pairs",
     ("events", "topic_types"): "event_topic_type",
     ("null_address",): "null_address",
     ("log_level",): "log_level",
 }
 
-# Type casters for fields that aren't str.
 FIELD_TYPE: dict[str, Any] = {
     "clickhouse_port": int,
-    "tracked_tokens": lambda v: tuple(v) if isinstance(v, list) else tuple(json.loads(v)),
+    "pairs": lambda v: tuple(TradePair(**item) if isinstance(item, dict) else item for item in v),
     "event_topic_type": lambda v: v if isinstance(v, dict) else json.loads(v),
 }
 
@@ -70,21 +69,28 @@ class Settings:
     clickhouse_password: str = ""
     clickhouse_database: str = "default"
     clickhouse_table: str = "trades"
-    usdc_address: str = "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
-    usdc_old_address: str = "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
-    weth_address: str = "0x4200000000000000000000000000000000000006"
-    weth_old_address: str = "0x4200000000000000000000000000000000000042"
-    tracked_tokens: tuple[str, ...] = (
-        "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
-        "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",
-        "0x4200000000000000000000000000000000000006",
+    pairs: tuple[TradePair, ...] = (
+        TradePair(
+            name="ETH/USDC",
+            base_token="0x4200000000000000000000000000000000000006",
+            quote_token="0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+            base_decimals=18,
+            quote_decimals=6,
+        ),
+        TradePair(
+            name="ETH/USDC.e",
+            base_token="0x4200000000000000000000000000000000000006",
+            quote_token="0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",
+            base_decimals=18,
+            quote_decimals=6,
+        ),
     )
     null_address: str = "0x0000000000000000000000000000000000000000"
-    event_topic_type: dict[str, str] = None  # type: ignore[assignment]
+    event_topic_type: dict[str, str] = field(default_factory=lambda: {})  # type: ignore[assignment]
     log_level: str = "INFO"
 
     def __post_init__(self) -> None:
-        if self.event_topic_type is None:
+        if not self.event_topic_type:
             object.__setattr__(
                 self,
                 "event_topic_type",
@@ -94,6 +100,14 @@ class Settings:
                     "0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65": "WITHDRAWAL",
                 },
             )
+
+    @property
+    def tracked_tokens(self) -> list[str]:
+        seen: set[str] = set()
+        for pair in self.pairs:
+            seen.add(pair.base_token.lower())
+            seen.add(pair.quote_token.lower())
+        return sorted(seen)
 
 
 def _search_paths() -> list[Path]:
@@ -115,7 +129,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 def _resolve_yaml(d: dict[str, Any], field_map: dict[tuple[str, ...], str]) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for path, field in field_map.items():
+    for path, fname in field_map.items():
         val: Any = d
         for key in path:
             if not isinstance(val, dict):
@@ -123,15 +137,14 @@ def _resolve_yaml(d: dict[str, Any], field_map: dict[tuple[str, ...], str]) -> d
                 break
             val = val.get(key)
         if val is not None:
-            caster = FIELD_TYPE.get(field)
-            out[field] = caster(val) if caster else val
+            caster = FIELD_TYPE.get(fname)
+            out[fname] = caster(val) if caster else val
     return out
 
 
 def load_settings(config_path: str | None = None) -> Settings:
     kwargs: dict[str, Any] = {}
 
-    # 1. YAML file(s)
     if config_path:
         yaml_data = _read_yaml(Path(config_path))
         kwargs.update(_resolve_yaml(yaml_data, YAML_FIELD_MAP))
@@ -140,14 +153,12 @@ def load_settings(config_path: str | None = None) -> Settings:
             yaml_data = _read_yaml(path)
             kwargs.update(_resolve_yaml(yaml_data, YAML_FIELD_MAP))
 
-    # 2. Environment variables override YAML
-    for env_name, field in ENV_FIELD_MAP.items():
+    for env_name, fname in ENV_FIELD_MAP.items():
         val = os.environ.get(env_name)
         if val is not None:
-            caster = FIELD_TYPE.get(field)
-            kwargs[field] = caster(val) if caster else val
+            caster = FIELD_TYPE.get(fname)
+            kwargs[fname] = caster(val) if caster else val
 
-    # 3. Fill remaining gaps with Settings defaults
     final: dict[str, Any] = {}
     for fname in Settings.__dataclass_fields__:
         if fname in kwargs:
@@ -159,25 +170,20 @@ def load_settings(config_path: str | None = None) -> Settings:
 
 
 def apply_settings(settings: Settings) -> None:
-    global USDC_ADDRESS, USDC_OLD_ADDRESS, WETH_ADDRESS, WETH_OLD_ADDRESS
     global TRACKED_TOKENS, EVENT_TOPIC_TYPE, NULL_ADDRESS
-    USDC_ADDRESS = settings.usdc_address
-    USDC_OLD_ADDRESS = settings.usdc_old_address
-    WETH_ADDRESS = settings.weth_address
-    WETH_OLD_ADDRESS = settings.weth_old_address
-    TRACKED_TOKENS = list(settings.tracked_tokens)
+    TRACKED_TOKENS = settings.tracked_tokens
     EVENT_TOPIC_TYPE = dict(settings.event_topic_type)
     NULL_ADDRESS = settings.null_address
 
 
 # --- Module-level constants (overridable via apply_settings) ----------------
+# TRACKED_TOKENS is derived from the default Settings pairs.
 
-USDC_ADDRESS = "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
-USDC_OLD_ADDRESS = "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
-WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
-WETH_OLD_ADDRESS = "0x4200000000000000000000000000000000000042"
-
-TRACKED_TOKENS = [USDC_ADDRESS, USDC_OLD_ADDRESS, WETH_ADDRESS]
+TRACKED_TOKENS = [
+    "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+    "0x4200000000000000000000000000000000000006",
+    "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1",
+]
 
 ERC20_NAME_ABI = [
     {

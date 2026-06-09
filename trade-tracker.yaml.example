@@ -7,15 +7,28 @@ alchemy:
 
 wallet_address: ""                # or set WALLET_ADDRESS env var, or use -w flag
 
-tokens:
-  usdc: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
-  usdc_old: "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
-  weth: "0x4200000000000000000000000000000000000006"
-  weth_old: "0x4200000000000000000000000000000000000042"
-  tracked:
-    - "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
-    - "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
-    - "0x4200000000000000000000000000000000000006"
+# Define one or more trading pairs to detect.
+# A pair = base_token (what you're buying/selling) + quote_token (what you're paying/receiving).
+# The wallet must move both tokens in a transaction for a trade to be recorded.
+pairs:
+  - name: "ETH/USDC"
+    base_token: "0x4200000000000000000000000000000000000006"
+    quote_token: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
+    base_decimals: 18
+    quote_decimals: 6
+
+  - name: "OP/USDC"
+    base_token: "0x4200000000000000000000000000000000000042"
+    quote_token: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
+    base_decimals: 18
+    quote_decimals: 6
+
+  # Arbitrum example:
+  # - name: "ETH/USDC"
+  #   base_token: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+  #   quote_token: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+  #   base_decimals: 18
+  #   quote_decimals: 6
 
 events:
   topic_types:

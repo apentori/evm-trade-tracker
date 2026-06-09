@@ -103,7 +103,7 @@ def main(
         transactions = scan_specific_blocks(w3, wallet_address, sorted(set(blocks)))
 
     logging.info("Found %d transaction batches", len(transactions))
-    trades = create_trades(w3, transactions, wallet_address)
+    trades = create_trades(w3, transactions, wallet_address, pairs=list(settings.pairs))
     logging.info("Created %d trades", len(trades))
 
     if to_json:

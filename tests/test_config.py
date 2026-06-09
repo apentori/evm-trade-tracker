@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 import trade_tracker.config as cfg
-from trade_tracker.config import apply_settings, load_settings
+from trade_tracker.config import load_settings
 
 
 def test_defaults():
@@ -14,30 +14,62 @@ def test_defaults():
     assert settings.alchemy_url == "https://opt-mainnet.g.alchemy.com/v2"
     assert settings.clickhouse_port == 9000
     assert settings.log_level == "INFO"
-    assert settings.usdc_address == cfg.USDC_ADDRESS
+    assert len(settings.pairs) == 2
+    assert settings.pairs[0].name == "ETH/USDC"
+    assert settings.pairs[0].base_decimals == 18
     assert settings.null_address == cfg.NULL_ADDRESS
     assert "SWAP" in settings.event_topic_type.values()
 
 
-def test_yaml_file(tmp_path: Path):
+def test_tracked_tokens_derived_from_pairs():
+    settings = load_settings()
+    tracked = settings.tracked_tokens
+    assert len(tracked) == 3
+    assert "0x0b2c639c533813f4aa9d7837caf62653d097ff85" in tracked
+    assert "0x4200000000000000000000000000000000000006" in tracked
+    assert "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1" in tracked
+
+
+def test_pairs_via_yaml(tmp_path: Path):
     config = tmp_path / "config.yaml"
     config.write_text(
         yaml.dump(
             {
-                "alchemy": {"url": "https://custom.url", "api_key": "key-from-yaml"},
-                "wallet_address": "0xabc",
-                "clickhouse": {"host": "ch.example.com", "port": 8123},
-                "log_level": "DEBUG",
+                "pairs": [
+                    {
+                        "name": "ETH/USD",
+                        "base_token": "0xbase11111111111111111111111111111111111111",
+                        "quote_token": "0xquote2222222222222222222222222222222222222",
+                        "base_decimals": 18,
+                        "quote_decimals": 8,
+                    },
+                ],
             }
         )
     )
     settings = load_settings(str(config))
-    assert settings.alchemy_url == "https://custom.url"
-    assert settings.alchemy_api_key == "key-from-yaml"
-    assert settings.wallet_address == "0xabc"
-    assert settings.clickhouse_host == "ch.example.com"
-    assert settings.clickhouse_port == 8123
-    assert settings.log_level == "DEBUG"
+    assert len(settings.pairs) == 1
+    assert settings.pairs[0].name == "ETH/USD"
+    assert settings.pairs[0].base_token == "0xbase11111111111111111111111111111111111111"
+    assert settings.pairs[0].quote_decimals == 8
+
+
+def test_multiple_pairs(tmp_path: Path):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        yaml.dump(
+            {
+                "pairs": [
+                    {"name": "A/B", "base_token": "0xaaa", "quote_token": "0xbbb"},
+                    {"name": "C/D", "base_token": "0xccc", "quote_token": "0xddd"},
+                ],
+            }
+        )
+    )
+    settings = load_settings(str(config))
+    assert len(settings.pairs) == 2
+    assert settings.pairs[1].name == "C/D"
+    assert settings.tracked_tokens == ["0xaaa", "0xbbb", "0xccc", "0xddd"]
 
 
 def test_yaml_partial(tmp_path: Path):
@@ -45,8 +77,7 @@ def test_yaml_partial(tmp_path: Path):
     config.write_text(yaml.dump({"log_level": "WARNING"}))
     settings = load_settings(str(config))
     assert settings.log_level == "WARNING"
-    assert settings.alchemy_url == "https://opt-mainnet.g.alchemy.com/v2"
-    assert settings.clickhouse_port == 9000
+    assert len(settings.pairs) == 2
 
 
 def test_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -94,73 +125,16 @@ def test_settings_frozen():
         settings.alchemy_url = "changed"  # type: ignore[misc]
 
 
-def test_token_config_via_yaml(tmp_path: Path):
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        yaml.dump(
-            {
-                "tokens": {
-                    "usdc": "0x1111111111111111111111111111111111111111",
-                    "weth": "0x2222222222222222222222222222222222222222",
-                    "tracked": [
-                        "0x1111111111111111111111111111111111111111",
-                        "0x2222222222222222222222222222222222222222",
-                    ],
-                },
-                "null_address": "0xdead000000000000000000000000000000000000",
-            }
-        )
-    )
-    settings = load_settings(str(config))
-    assert settings.usdc_address == "0x1111111111111111111111111111111111111111"
-    assert settings.usdc_old_address == "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1"
-    assert settings.weth_address == "0x2222222222222222222222222222222222222222"
-    assert settings.weth_old_address == "0x4200000000000000000000000000000000000042"
-    assert settings.null_address == "0xdead000000000000000000000000000000000000"
-    assert len(settings.tracked_tokens) == 2
+def test_apply_settings_updates_globals():
+    settings = load_settings()
+    cfg.apply_settings(settings)
+    assert cfg.TRACKED_TOKENS == settings.tracked_tokens
+    assert cfg.EVENT_TOPIC_TYPE == settings.event_topic_type
+    assert cfg.NULL_ADDRESS == settings.null_address
 
 
 def test_event_topic_type_via_yaml(tmp_path: Path):
     config = tmp_path / "config.yaml"
-    config.write_text(
-        yaml.dump(
-            {
-                "events": {
-                    "topic_types": {
-                        "0xabc": "CUSTOM_EVENT",
-                    }
-                }
-            }
-        )
-    )
+    config.write_text(yaml.dump({"events": {"topic_types": {"0xabc": "CUSTOM_EVENT"}}}))
     settings = load_settings(str(config))
     assert settings.event_topic_type == {"0xabc": "CUSTOM_EVENT"}
-
-
-def test_token_env_override(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("WETH_ADDRESS", "0xdead00000000000000000000000000000000dead")
-    settings = load_settings()
-    assert settings.weth_address == "0xdead00000000000000000000000000000000dead"
-    assert settings.usdc_address == "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
-
-
-def test_apply_settings_updates_globals(tmp_path: Path):
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        yaml.dump(
-            {
-                "tokens": {
-                    "usdc": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "tracked": ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-                },
-                "null_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "events": {"topic_types": {"0xaaa": "FOO", "0xbbb": "BAR"}},
-            }
-        )
-    )
-    settings = load_settings(str(config))
-    apply_settings(settings)
-    assert cfg.USDC_ADDRESS == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    assert cfg.NULL_ADDRESS == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    assert cfg.TRACKED_TOKENS == ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
-    assert cfg.EVENT_TOPIC_TYPE == {"0xaaa": "FOO", "0xbbb": "BAR"}
