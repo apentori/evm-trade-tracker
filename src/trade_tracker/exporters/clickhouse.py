@@ -10,7 +10,7 @@ from trade_tracker.models import Trade
 CREATE_TRADES_TABLE = """
 CREATE OR REPLACE TABLE {database}.{table} (
     transaction_hash  String,
-    trade_timestamp   UInt32,
+    trade_datetime    DateTime,
     block_number      UInt32,
     pair_name         String,
     base_token        String,
@@ -21,7 +21,7 @@ CREATE OR REPLACE TABLE {database}.{table} (
     type              String,
     sender            String
 ) ENGINE = ReplacingMergeTree()
-ORDER BY (transaction_hash, trade_timestamp)
+ORDER BY (transaction_hash, trade_datetime)
 """
 
 

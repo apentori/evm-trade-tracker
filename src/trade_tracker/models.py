@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Any
 
 
@@ -30,7 +31,7 @@ class Transaction:
 @dataclass
 class Trade:
     transaction_hash: str
-    trade_timestamp: int
+    trade_datetime: datetime
     block_number: int
     pair_name: str
     base_token: str

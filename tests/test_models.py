@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from trade_tracker.models import EventLog, Trade, Transaction
 
 
@@ -31,7 +33,7 @@ def test_transaction_add_event_log():
 def test_trade_to_dict():
     trade = Trade(
         transaction_hash="0xh",
-        trade_timestamp=1000,
+        trade_datetime=datetime.fromtimestamp(1000, tz=timezone.utc),
         block_number=1,
         pair_name="ETH/USDC",
         base_token="0xbase",

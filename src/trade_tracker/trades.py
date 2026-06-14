@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from web3 import Web3
 
@@ -95,7 +96,7 @@ def create_trades(
                 trades.append(
                     Trade(
                         transaction_hash=tx.hash,
-                        trade_timestamp=tx.timestamp,
+                        trade_datetime=datetime.fromtimestamp(tx.timestamp, tz=timezone.utc),
                         block_number=tx.block,
                         pair_name=pair.name,
                         base_token=pair.base_token,
