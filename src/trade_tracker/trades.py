@@ -9,6 +9,35 @@ from trade_tracker.config import TradePair
 from trade_tracker.models import Trade, Transaction
 
 
+def calculate_trade_amount(relevant_logs, base_addr, quote_addr, checksum_wallet):
+    base_received = 0
+    base_sent = 0
+    quote_received = 0
+    quote_sent = 0
+    for log in relevant_logs:
+        addr = log.token_address.lower()
+        log_sender =Web3.to_checksum_address(log.sender)
+        log_receiver = Web3.to_checksum_address(log.receiver)
+
+        if addr == base_addr:
+            if log_sender == checksum_wallet:
+                base_sent += log.amount
+            if log_receiver == checksum_wallet:
+                base_received += log.amount
+        elif addr == quote_addr:
+            if log_sender == checksum_wallet:
+                quote_sent += log.amount
+            if log_receiver == checksum_wallet:
+                quote_received += log.amount
+
+    return {
+        "base_received": base_received,
+        "base_sent": base_sent,
+        "quote_received": quote_received,
+        "quote_sent": quote_sent
+    }
+
+
 def create_trades(
     w3: Web3,
     transactions: list[list[Transaction]],
@@ -35,54 +64,43 @@ def create_trades(
         tracked.add(p.quote_token.lower())
 
     trades: list[Trade] = []
+    logging.info("hello world")
 
     for tx_list in transactions:
         for tx in tx_list:
             if not tx.event_logs:
                 logging.warning("No events in transaction %s", tx.hash)
                 continue
+            for log in tx.event_logs:
+                logging.debug(f"transaction {tx.hash} - event {log.event_type} for token {log.token_address}")
 
             relevant = [log for log in tx.event_logs if log.token_address.lower() in tracked]
             if not relevant:
+                logging.warning(f"{tx.hash} not releveant")
                 continue
 
             for pair in pairs:
                 base_addr = pair.base_token.lower()
                 quote_addr = pair.quote_token.lower()
 
-                # Gross flows for this pair: how much base/quote the wallet sent/received
-                base_received = 0
-                base_sent = 0
-                quote_received = 0
-                quote_sent = 0
-
-                for log in relevant:
-                    addr = log.token_address.lower()
-                    log_sender = w3.to_checksum_address(log.sender)
-                    log_receiver = w3.to_checksum_address(log.receiver)
-
-                    if addr == base_addr:
-                        if log_sender == checksum_wallet:
-                            base_sent += log.amount
-                        if log_receiver == checksum_wallet:
-                            base_received += log.amount
-                    elif addr == quote_addr:
-                        if log_sender == checksum_wallet:
-                            quote_sent += log.amount
-                        if log_receiver == checksum_wallet:
-                            quote_received += log.amount
-
+                amount= calculate_trade_amount(relevant, base_addr, quote_addr, checksum_wallet)
                 # BUY: wallet sends quote, receives base
-                if quote_sent > 0 and base_received > 0:
-                    amount_base = base_received
-                    amount_quote = quote_sent
+                logging.debug(f"hash {tx.hash} - all - logs amount {amount} - trx amount {tx.value}")
+
+                if tx.value > 0:
+                    amount['base_sent'] = amount['base_sent'] + tx.value
+
+                if amount['quote_sent'] > 0 and amount['base_received'] > 0:
+                    amount_base = amount['base_received']
+                    amount_quote = amount['quote_sent']
                     trade_type = "BUY"
                 # SELL: wallet sends base, receives quote
-                elif base_sent > 0 and quote_received > 0:
-                    amount_base = base_sent
-                    amount_quote = quote_received
+                elif amount['base_sent'] > 0 and amount['quote_received'] > 0:
+                    amount_base = amount['base_sent']
+                    amount_quote = amount['quote_received']
                     trade_type = "SELL"
                 else:
+                    logging.warning(f"hash {tx.hash} - amount not matching - logs amount {amount} - trx amount {tx.value}")
                     continue
 
                 base_dec = pair.base_decimals
@@ -90,7 +108,9 @@ def create_trades(
                 amount_base_dec = amount_base / (10**base_dec)
                 amount_quote_dec = amount_quote / (10**quote_dec)
 
+                logging.info(f"Trade {tx.hash} - base {amount_base_dec} - quote {amount_quote_dec}")
                 if amount_base_dec == 0:
+                    logging.info(f"amount_base dec hash {tx.hash}")
                     continue
 
                 trades.append(

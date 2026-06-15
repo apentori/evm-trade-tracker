@@ -19,7 +19,7 @@ let
       quote_decimals = 6;
     }
     {
-      name = "ETH/USDC.e";
+      name = "ETH/DAI";
       base_token = "0x4200000000000000000000000000000000000006";
       quote_token = "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1";
       base_decimals = 18;
