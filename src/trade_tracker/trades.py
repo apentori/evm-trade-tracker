@@ -126,6 +126,7 @@ def create_trades(
                         price=amount_quote_dec / amount_base_dec,
                         type=trade_type,
                         sender=wallet_address,
+                        groupe=""
                     )
                 )
 

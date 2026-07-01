@@ -41,6 +41,7 @@ class Trade:
     price: float
     type: str
     sender: str
+    groupe: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

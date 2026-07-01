@@ -19,7 +19,8 @@ CREATE OR REPLACE TABLE {database}.{table} (
     amount_quote      Float64,
     price             Float64,
     type              String,
-    sender            String
+    sender            String,
+    groupe            String,
 ) ENGINE = ReplacingMergeTree()
 ORDER BY (transaction_hash, trade_datetime)
 """

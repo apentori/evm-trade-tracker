@@ -43,6 +43,7 @@ def test_trade_to_dict():
         price=2000.0,
         type="BUY",
         sender="0xsender",
+        groupe=""
     )
     d = trade.to_dict()
     assert d["transaction_hash"] == "0xh"
