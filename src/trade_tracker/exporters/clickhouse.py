@@ -47,7 +47,7 @@ def export_to_clickhouse(
         password=password,
         database=database,
     )
-    client.execute(CREATE_TRADES_TABLE.format(database=database, table=table))
+    #client.execute(CREATE_TRADES_TABLE.format(database=database, table=table))
     client.execute(f"INSERT INTO {table} VALUES", dict_data)
     client.disconnect()
     logging.info("Exported %d trades to ClickHouse (%s.%s)", len(dict_data), database, table)

@@ -164,9 +164,14 @@ async def wallet_activity(request: Request, payload: WebhookPayload) -> dict:
 
 
 def run() -> None:
+    import argparse
     import uvicorn
 
-    settings = load_settings()
+    parser = argparse.ArgumentParser(prog="trade-tracker-server")
+    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
+    args = parser.parse_args()
+
+    settings = load_settings(args.config)
     apply_settings(settings)
     logging.basicConfig(level=str(settings.log_level).upper())
 

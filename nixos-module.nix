@@ -189,7 +189,9 @@ in
 
         serviceConfig = {
           Type = "simple";
-          ExecStart = "${pkgs.trade-tracker}/bin/trade-tracker-server";
+          ExecStart =
+            "${pkgs.trade-tracker}/bin/trade-tracker-server"
+            + " --config /etc/trade-tracker/config.yaml";
           EnvironmentFile = cfg.environmentFile;
           Restart = "on-failure";
           RestartSec = "5s";
