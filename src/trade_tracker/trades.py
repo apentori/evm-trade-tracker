@@ -100,7 +100,9 @@ def create_trades(
                     amount_quote = amount['quote_received']
                     trade_type = "SELL"
                 else:
-                    logging.warning(f"hash {tx.hash} - amount not matching - logs amount {amount} - trx amount {tx.value}")
+                    logging.warning(
+                        f"hash {tx.hash} - amount not matching - logs amount {amount} - trx amount {tx.value}"
+                    )
                     continue
 
                 base_dec = pair.base_decimals

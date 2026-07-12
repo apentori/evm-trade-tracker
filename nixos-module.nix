@@ -38,6 +38,10 @@ let
       database = cfg.clickhouse.database;
       table = cfg.clickhouse.table;
     };
+    server = {
+      host = cfg.server.host;
+      port = cfg.server.port;
+    };
     pairs = cfg.pairs;
     events.topic_types = cfg.eventTopicTypes;
     null_address = cfg.nullAddress;
@@ -48,16 +52,27 @@ in
   options.services.trade-tracker = {
     enable = lib.mkEnableOption "Trade Tracker service";
 
+    mode = lib.mkOption {
+      type = lib.types.enum [ "scanner" "server" ];
+      default = "scanner";
+      description = ''
+        Operation mode. "scanner" runs the CLI on a timer to poll blocks.
+        "server" runs the FastAPI webhook server for real-time pushes.
+      '';
+    };
+
     environmentFile = lib.mkOption {
       type = lib.types.str;
       default = "/etc/trade-tracker/secrets.env";
       description = ''
         Path to environment file containing secrets.
-        Must define: ALCHEMY_API_KEY, WALLET_ADDRESS, and optionally CLICKHOUSE_PASSWORD.
+        Must define: ALCHEMY_API_KEY, WALLET_ADDRESS, and optionally
+        CLICKHOUSE_PASSWORD and WEBHOOK_SIGNING_KEY (for server mode).
         Example content:
           ALCHEMY_API_KEY=your-key
           WALLET_ADDRESS=0xdead...
           CLICKHOUSE_PASSWORD=s3cret
+          WEBHOOK_SIGNING_KEY=whsec_...
         Create with: sudo chmod 600 /etc/trade-tracker/secrets.env
       '';
     };
@@ -136,6 +151,19 @@ in
       default = "INFO";
     };
 
+    server = {
+      host = lib.mkOption {
+        type = lib.types.str;
+        default = "0.0.0.0";
+        description = "Address the webhook server binds to";
+      };
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 8000;
+        description = "Port the webhook server listens on";
+      };
+    };
+
     follow = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -153,23 +181,39 @@ in
   config = lib.mkIf cfg.enable {
     environment.etc."trade-tracker/config.yaml".source = configYaml;
 
-    systemd.services.trade-tracker = {
-      description = "Trade Tracker — scan wallet for trades";
-      after = [ "network.target" ];
-      wants = [ "network.target" ];
+    systemd.services.trade-tracker =
+      if cfg.mode == "server" then {
+        description = "Trade Tracker — webhook server";
+        after = [ "network.target" ];
+        wants = [ "network.target" ];
 
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart =
-          "${pkgs.trade-tracker}/bin/trade-tracker"
-          + " --config /etc/trade-tracker/config.yaml"
-          + lib.optionalString cfg.follow " --follow";
-        EnvironmentFile = cfg.environmentFile;
-        UMask = "0077";
+        serviceConfig = {
+          Type = "simple";
+          ExecStart = "${pkgs.trade-tracker}/bin/trade-tracker-server";
+          EnvironmentFile = cfg.environmentFile;
+          Restart = "on-failure";
+          RestartSec = "5s";
+          UMask = "0077";
+        };
+
+        wantedBy = [ "multi-user.target" ];
+      } else {
+        description = "Trade Tracker — scan wallet for trades";
+        after = [ "network.target" ];
+        wants = [ "network.target" ];
+
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart =
+            "${pkgs.trade-tracker}/bin/trade-tracker"
+            + " --config /etc/trade-tracker/config.yaml"
+            + lib.optionalString cfg.follow " --follow";
+          EnvironmentFile = cfg.environmentFile;
+          UMask = "0077";
+        };
       };
-    };
 
-    systemd.timers.trade-tracker = {
+    systemd.timers.trade-tracker = lib.mkIf (cfg.mode == "scanner") {
       description = "Trade Tracker — periodic scan timer";
       wantedBy = [ "timers.target" ];
 

@@ -33,6 +33,9 @@ ENV_FIELD_MAP: dict[str, str] = {
     "CLICKHOUSE_TABLE": "clickhouse_table",
     "NULL_ADDRESS": "null_address",
     "LOG_LEVEL": "log_level",
+    "SERVER_HOST": "server_host",
+    "SERVER_PORT": "server_port",
+    "WEBHOOK_SIGNING_KEY": "webhook_signing_key",
 }
 
 YAML_FIELD_MAP: dict[tuple[str, ...], str] = {
@@ -49,10 +52,14 @@ YAML_FIELD_MAP: dict[tuple[str, ...], str] = {
     ("events", "topic_types"): "event_topic_type",
     ("null_address",): "null_address",
     ("log_level",): "log_level",
+    ("server", "host"): "server_host",
+    ("server", "port"): "server_port",
+    ("webhook", "signing_key"): "webhook_signing_key",
 }
 
 FIELD_TYPE: dict[str, Any] = {
     "clickhouse_port": int,
+    "server_port": int,
     "pairs": lambda v: tuple(TradePair(**item) if isinstance(item, dict) else item for item in v),
     "event_topic_type": lambda v: v if isinstance(v, dict) else json.loads(v),
 }
@@ -85,6 +92,9 @@ class Settings:
             quote_decimals=6,
         ),
     )
+    server_host: str = "0.0.0.0"
+    server_port: int = 8000
+    webhook_signing_key: str = ""
     null_address: str = "0x0000000000000000000000000000000000000000"
     event_topic_type: dict[str, str] = field(default_factory=lambda: {})  # type: ignore[assignment]
     log_level: str = "INFO"

@@ -27,11 +27,13 @@
           nativeBuildInputs = with python.pkgs; [ setuptools ];
 
           propagatedBuildInputs = with python.pkgs; [
-            web3
             click
-            requests
             clickhouse-driver
+            fastapi
             python-dotenv
+            requests
+            uvicorn
+            web3
           ];
 
           pythonImportsCheck = [
@@ -39,6 +41,7 @@
             "trade_tracker.cli"
             "trade_tracker.models"
             "trade_tracker.blockchain"
+            "trade_tracker.server"
           ];
         };
       in
