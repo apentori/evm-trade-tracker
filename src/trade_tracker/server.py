@@ -158,7 +158,7 @@ async def wallet_activity(request: Request, payload: WebhookPayload) -> dict:
     wallet_address = settings.wallet_address
     if not wallet_address:
         raise HTTPException(status_code=500, detail="WALLET_ADDRESS not configured")
-
+    logging.info(f"Payload {payload}")
     result = await asyncio.to_thread(_process_activity, settings, wallet_address, payload)
     return result
 
