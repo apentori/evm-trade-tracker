@@ -12,6 +12,7 @@ from web3 import Web3
 
 from trade_tracker.config import EVENT_TOPIC_TYPE, Settings, apply_settings, load_settings
 from trade_tracker.exporters.clickhouse import export_to_clickhouse
+from trade_tracker.grouping import assign_groups
 from trade_tracker.models import EventLog, Transaction
 from trade_tracker.trades import create_trades
 
@@ -127,6 +128,14 @@ def _process_activity(settings: Settings, wallet_address: str, payload: WebhookP
     trades = create_trades(w3, [transactions], wallet_address, pairs=list(settings.pairs))
 
     if trades:
+        assign_groups(
+            trades,
+            settings.clickhouse_host,
+            settings.clickhouse_port,
+            settings.clickhouse_user,
+            settings.clickhouse_password,
+            settings.clickhouse_database,
+        )
         export_to_clickhouse(
             trades,
             settings.clickhouse_host,
@@ -165,6 +174,7 @@ async def wallet_activity(request: Request, payload: WebhookPayload) -> dict:
 
 def run() -> None:
     import argparse
+
     import uvicorn
 
     parser = argparse.ArgumentParser(prog="trade-tracker-server")

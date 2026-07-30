@@ -10,6 +10,7 @@ from trade_tracker.blockchain import scan_blocks_range, scan_specific_blocks
 from trade_tracker.config import apply_settings, load_settings
 from trade_tracker.exporters.clickhouse import export_to_clickhouse, get_last_block_number
 from trade_tracker.exporters.json_exporter import export_to_json
+from trade_tracker.grouping import assign_groups
 from trade_tracker.trades import create_trades
 
 
@@ -109,6 +110,7 @@ def main(
     if to_json:
         export_to_json(trades)
     else:
+        assign_groups(trades, ch_host, ch_port, ch_user, ch_password, ch_database)
         export_to_clickhouse(trades, ch_host, ch_port, ch_user, ch_password, ch_database, ch_table)
 
 
