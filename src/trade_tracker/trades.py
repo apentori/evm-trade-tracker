@@ -16,7 +16,7 @@ def calculate_trade_amount(relevant_logs, base_addr, quote_addr, checksum_wallet
     quote_sent = 0
     for log in relevant_logs:
         addr = log.token_address.lower()
-        log_sender =Web3.to_checksum_address(log.sender)
+        log_sender = Web3.to_checksum_address(log.sender)
         log_receiver = Web3.to_checksum_address(log.receiver)
 
         if addr == base_addr:
@@ -34,7 +34,7 @@ def calculate_trade_amount(relevant_logs, base_addr, quote_addr, checksum_wallet
         "base_received": base_received,
         "base_sent": base_sent,
         "quote_received": quote_received,
-        "quote_sent": quote_sent
+        "quote_sent": quote_sent,
     }
 
 
@@ -64,7 +64,6 @@ def create_trades(
         tracked.add(p.quote_token.lower())
 
     trades: list[Trade] = []
-    logging.info("hello world")
 
     for tx_list in transactions:
         for tx in tx_list:
@@ -83,21 +82,21 @@ def create_trades(
                 base_addr = pair.base_token.lower()
                 quote_addr = pair.quote_token.lower()
 
-                amount= calculate_trade_amount(relevant, base_addr, quote_addr, checksum_wallet)
+                amount = calculate_trade_amount(relevant, base_addr, quote_addr, checksum_wallet)
                 # BUY: wallet sends quote, receives base
                 logging.debug(f"hash {tx.hash} - all - logs amount {amount} - trx amount {tx.value}")
 
                 if tx.value > 0:
-                    amount['base_sent'] = amount['base_sent'] + tx.value
+                    amount["base_sent"] = amount["base_sent"] + tx.value
 
-                if amount['quote_sent'] > 0 and amount['base_received'] > 0:
-                    amount_base = amount['base_received']
-                    amount_quote = amount['quote_sent']
+                if amount["quote_sent"] > 0 and amount["base_received"] > 0:
+                    amount_base = amount["base_received"]
+                    amount_quote = amount["quote_sent"]
                     trade_type = "BUY"
                 # SELL: wallet sends base, receives quote
-                elif amount['base_sent'] > 0 and amount['quote_received'] > 0:
-                    amount_base = amount['base_sent']
-                    amount_quote = amount['quote_received']
+                elif amount["base_sent"] > 0 and amount["quote_received"] > 0:
+                    amount_base = amount["base_sent"]
+                    amount_quote = amount["quote_received"]
                     trade_type = "SELL"
                 else:
                     logging.warning(

@@ -121,6 +121,40 @@ trade-tracker -w 0x... -k KEY --follow
 trade-tracker -w 0x... -k KEY --full
 ```
 
+Re-scans are idempotent: trades already stored in ClickHouse are skipped, so
+overlapping `--from-block`/`--to-block` ranges never duplicate trades or
+groups.
+
+## Webhook server
+
+Instead of polling, run the FastAPI server to receive real-time Address
+Activity webhooks from Alchemy:
+
+```bash
+trade-tracker-server --config /path/to/trade-tracker.yaml
+```
+
+- Endpoint: `POST /wallet_activity` — configure your Alchemy webhook URL as
+  `https://your-host:8000/wallet_activity`.
+- Set `WALLET_ADDRESS` and `ALCHEMY_API_KEY` (env vars or YAML config).
+- To verify deliveries, set `webhook.signing_key` in the YAML config (or
+  `WEBHOOK_SIGNING_KEY`) to the **per-webhook signing key** from the Alchemy
+  dashboard; requests with a bad signature are rejected with 401.
+- Malformed payloads are acknowledged with a 2xx (logged and ignored) —
+  Alchemy retries any non-2xx delivery and disables webhooks that keep
+  failing for 24 hours. Transient processing failures (RPC/ClickHouse
+  unreachable) return 5xx so Alchemy retries them.
+- Deliveries are processed idempotently: retried events never duplicate
+  trades or groups.
+
+## ClickHouse schema
+
+`trades` and `trades_group` use `ReplacingMergeTree(version)` ordered by
+`(transaction_hash, pair_name, trade_datetime)`; `trades_group` rows carry a
+`version` so a trade's `close` row deterministically replaces its `open` row.
+See [docs/clickhouse-migration.md](docs/clickhouse-migration.md) to migrate
+existing tables.
+
 ## Nix / NixOS
 
 ```bash

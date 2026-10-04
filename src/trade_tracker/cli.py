@@ -8,7 +8,11 @@ from web3 import Web3
 from trade_tracker.alchemy import AlchemyClient
 from trade_tracker.blockchain import scan_blocks_range, scan_specific_blocks
 from trade_tracker.config import apply_settings, load_settings
-from trade_tracker.exporters.clickhouse import export_to_clickhouse, get_last_block_number
+from trade_tracker.exporters.clickhouse import (
+    export_to_clickhouse,
+    fetch_known_trade_keys,
+    get_last_block_number,
+)
 from trade_tracker.exporters.json_exporter import export_to_json
 from trade_tracker.grouping import assign_groups
 from trade_tracker.trades import create_trades
@@ -110,8 +114,20 @@ def main(
     if to_json:
         export_to_json(trades)
     else:
-        assign_groups(trades, ch_host, ch_port, ch_user, ch_password, ch_database)
-        export_to_clickhouse(trades, ch_host, ch_port, ch_user, ch_password, ch_database, ch_table)
+        # Make re-scans idempotent: trades already stored must not be
+        # re-inserted nor re-grouped (overlapping block ranges would
+        # otherwise create bogus extra groups).
+        known = fetch_known_trade_keys(ch_host, ch_port, ch_user, ch_password, ch_database)
+        new_trades = [t for t in trades if (t.transaction_hash, t.pair_name) not in known]
+        skipped = len(trades) - len(new_trades)
+        if skipped:
+            logging.info("Skipping %d trades already stored", skipped)
+
+        if new_trades:
+            assign_groups(new_trades, ch_host, ch_port, ch_user, ch_password, ch_database)
+            export_to_clickhouse(new_trades, ch_host, ch_port, ch_user, ch_password, ch_database, ch_table)
+        else:
+            logging.info("No new trades to store")
 
 
 if __name__ == "__main__":
